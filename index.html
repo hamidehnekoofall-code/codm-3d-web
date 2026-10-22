@@ -3,268 +3,326 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>CODM Web 3D - Mythic Edition</title>
+<title>CODM Web FPS - Realistic Edition</title>
 <style>
   body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   canvas { display: block; }
   
-  /* UI */
-  #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
   
+  /* Crosshair */
   #crosshair {
-    position: absolute; top: 50%; left: 50%; width: 30px; height: 30px;
-    transform: translate(-50%, -50%);
-    border: 2px solid rgba(255, 255, 255, 0.8); border-radius: 50%;
+    position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
+    transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,0.8); border-radius: 50%;
   }
   #crosshair::before { content: ''; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: red; border-radius: 50%; transform: translate(-50%, -50%); }
   
-  #stats {
-    position: absolute; top: 20px; left: 20px; color: #00ffff; font-size: 20px; font-weight: bold; text-shadow: 0 0 10px #00ffff;
+  /* HUD */
+  #hud {
+    position: absolute; top: 20px; left: 20px; color: white; font-size: 18px; text-shadow: 1px 1px 4px #000; font-weight: bold;
   }
-  #stats span { color: gold; font-size: 24px; text-shadow: 0 0 10px gold; }
+  #hud .cp { color: #ffd700; font-size: 22px; }
+  #hud .hp { color: #00ff00; font-size: 22px; }
+  #hud .kill { color: #ff4444; font-size: 22px; }
 
   /* Joystick */
   #joystick-zone { position: absolute; bottom: 30px; left: 30px; width: 120px; height: 120px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; pointer-events: auto; }
-  #joystick-knob { position: absolute; top: 30px; left: 30px; width: 60px; height: 60px; background: rgba(0, 255, 255, 0.5); border-radius: 50%; box-shadow: 0 0 15px cyan; }
+  #joystick-knob { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(0, 255, 255, 0.6); border-radius: 50%; box-shadow: 0 0 15px cyan; }
 
-  /* Shoot Button */
-  #shoot-btn {
-    position: absolute; bottom: 40px; right: 40px; width: 90px; height: 90px;
-    background: radial-gradient(circle, rgba(255,0,0,0.8) 0%, rgba(150,0,0,0.5) 100%);
-    border: 2px solid #ff4444; border-radius: 50%; pointer-events: auto;
-    display: flex; justify-content: center; align-items: center; color: white; font-size: 30px;
-    box-shadow: 0 0 20px red;
-  }
-  #shoot-btn:active { transform: scale(0.9); }
-
+  /* Buttons */
+  #action-btns { position: absolute; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 15px; pointer-events: auto; }
+  .btn { width: 80px; height: 80px; border-radius: 50%; border: 2px solid white; display: flex; justify-content: center; align-items: center; font-size: 30px; font-weight: bold; user-select: none; }
+  #shoot-btn { background: rgba(255, 0, 0, 0.4); color: white; }
+  #jump-btn { background: rgba(0, 255, 0, 0.4); color: white; width: 60px; height: 60px; font-size: 20px; align-self: flex-end; }
+  #reload-btn { background: rgba(255, 255, 0, 0.4); color: white; width: 60px; height: 60px; font-size: 20px; align-self: flex-end; }
+  
+  .btn:active { transform: scale(0.9); }
 </style>
 </head>
 <body>
 
 <div id="ui-layer">
-  <div id="stats">Mythic AK117 | CP: <span>9,999,999</span></div>
+  <div id="hud">
+    <div class="cp">CP: 9,999,999</div>
+    <div class="hp" id="hp-text">HP: 100</div>
+    <div class="kill" id="kill-text">Kills: 0</div>
+  </div>
   <div id="crosshair"></div>
   
-  <div id="joystick-zone">
-    <div id="joystick-knob"></div>
-  </div>
+  <div id="joystick-zone"><div id="joystick-knob"></div></div>
   
-  <div id="shoot-btn">🔥</div>
+  <div id="action-btns">
+    <div class="btn" id="reload-btn">🔄</div>
+    <div class="btn" id="jump-btn">⬆️</div>
+    <div class="btn" id="shoot-btn">💥</div>
+  </div>
 </div>
 
-<!-- استفاده از Three.js و افکت‌های پس‌پردازش (Bloom) برای گرافیک خفن -->
+<!-- کتابخانه‌های Three.js و فیزیک Cannon.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
 
 <script>
-// --- تنظیمات پایه ---
+// ==========================================
+// 1. تنظیمات موتور گرافیکی و فیزیک
+// ==========================================
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x111122, 0.02); // مه برای عمق بخشیدن به محیط
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 1.6, 5); // قد یک انسان معمولی
+camera.position.set(0, 2, 5);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true; // فعالسازی سایه‌ها
+renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-// --- افکت Bloom (درخشش نئونی) ---
-const renderScene = new THREE.RenderPass(scene, camera);
-const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-bloomPass.threshold = 0.2;
-bloomPass.strength = 1.2;
-bloomPass.radius = 0.5;
+// فیزیک (برای پرش و برخورد)
+const world = new CANNON.World();
+world.gravity.set(0, -9.82, 0); // جاذبه زمین
+const playerBody = new CANNON.Body({
+    mass: 70,
+    shape: new CANNON.Sphere(0.5),
+    position: new CANNON.Vec3(0, 5, 5)
+});
+world.addBody(playerBody);
 
-const composer = new THREE.EffectComposer(renderer);
-composer.addPass(renderScene);
-composer.addPass(bloomPass);
-
-// --- نورپردازی ---
-const ambientLight = new THREE.AmbientLight(0x404060, 0.8);
+// ==========================================
+// 2. نورپردازی حرفه‌ای
+// ==========================================
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(20, 50, 20);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.width = 2048;
-dirLight.shadow.mapSize.height = 2048;
-dirLight.shadow.camera.near = 0.5;
-dirLight.shadow.camera.far = 100;
-dirLight.shadow.camera.left = -50;
-dirLight.shadow.camera.right = 50;
-dirLight.shadow.camera.top = 50;
-dirLight.shadow.camera.bottom = -50;
-scene.add(dirLight);
+const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
+sunLight.position.set(50, 100, 50);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 200;
+sunLight.shadow.camera.left = -50;
+sunLight.shadow.camera.right = 50;
+sunLight.shadow.camera.top = 50;
+sunLight.shadow.camera.bottom = -50;
+scene.add(sunLight);
 
-// نور نئونی نقطه‌ای برای افکت متیک
-const neonLight = new THREE.PointLight(0xcc00ff, 2, 10);
-neonLight.position.set(0, 1, -1);
-camera.add(neonLight);
-scene.add(camera);
-
-// --- ساخت محیط (زمین و دیوارها) ---
+// ==========================================
+// 3. ساخت محیط بازی (نقشه)
+// ==========================================
+// زمین
 const floorGeo = new THREE.PlaneGeometry(200, 200);
-const floorMat = new THREE.MeshStandardMaterial({ 
-    color: 0x222222, 
-    roughness: 0.2, 
-    metalness: 0.8 
-});
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x3a5a40, roughness: 0.8, metalness: 0.1 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
+// فیزیک زمین
+const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+world.addBody(floorBody);
 
-// ساخت کانتینرها (شبیه نقشه Shipment)
-const boxGeo = new THREE.BoxGeometry(4, 4, 8);
-const boxMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.7, roughness: 0.3 });
-const neonBoxMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x00ffff, emissiveIntensity: 1 }); // درخشش آبی
-
-for(let i=0; i<30; i++) {
-    const isNeon = Math.random() > 0.7;
-    const box = new THREE.Mesh(boxGeo, isNeon ? neonBoxMat : boxMat);
-    box.position.set((Math.random() - 0.5) * 80, 2, (Math.random() - 0.5) * 80);
-    box.rotation.y = Math.random() * Math.PI;
-    box.castShadow = true;
-    box.receiveShadow = true;
-    scene.add(box);
+// دیوارها و کاورها
+const wallGeo = new THREE.BoxGeometry(4, 4, 4);
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5 });
+for(let i=0; i<20; i++) {
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+    wall.position.set((Math.random() - 0.5) * 80, 2, (Math.random() - 0.5) * 80);
+    wall.castShadow = true; wall.receiveShadow = true;
+    scene.add(wall);
+    // فیزیک دیوار
+    const wallBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(2, 2, 2)), position: new CANNON.Vec3(wall.position.x, 2, wall.position.z) });
+    world.addBody(wallBody);
 }
 
-// --- ساخت اسلحه (Mythic Weapon) ---
+// ==========================================
+// 4. ساخت اسلحه (Mythic) با جزئیات بالا
+// ==========================================
 const gunGroup = new THREE.Group();
-const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
-const mythicMat = new THREE.MeshStandardMaterial({ color: 0x220033, emissive: 0xff00ff, emissiveIntensity: 1.5 });
+const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
+const mythicMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xaa00ff, emissiveIntensity: 2 });
 
-// بدنه اصلی
-const body = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.9), gunMat);
-body.castShadow = true;
-gunGroup.add(body);
-// قطعات نئونی
-const part1 = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.22, 0.2), mythicMat);
-part1.position.z = -0.2; gunGroup.add(part1);
-const part2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.1), mythicMat);
-part2.position.set(0, -0.1, 0.1); gunGroup.add(part2);
-// خشاب
-const mag = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.2), gunMat);
-mag.position.set(0, -0.2, -0.1); gunGroup.add(mag);
+// بدنه
+const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.8), gunMat);
+gunGroup.add(bodyMesh);
+// لوله
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4), gunMat);
+barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.05, -0.6);
+gunGroup.add(barrel);
+// نئون متیک
+const neon1 = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.05, 0.3), mythicMat);
+neon1.position.set(0, 0.1, -0.2); gunGroup.add(neon1);
+const neon2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.1), mythicMat);
+neon2.position.set(0, -0.1, 0.2); gunGroup.add(neon2);
 
-gunGroup.position.set(0.2, -0.2, -0.5); // موقعیت در دست راست
+gunGroup.position.set(0.3, -0.3, -0.5);
+gunGroup.rotation.y = 0.1;
 camera.add(gunGroup);
+scene.add(camera);
 
-// --- کنترل‌ها (Joystick و چرخش دوربین) ---
-const joystickZone = document.getElementById('joystick-zone');
-const joystickKnob = document.getElementById('joystick-knob');
-let joyActive = false;
-let joyVector = { x: 0, y: 0 };
+// نور فلش شلیک
+const muzzleFlash = new THREE.PointLight(0xffaa00, 0, 10);
+muzzleFlash.position.set(0, 0, -1);
+camera.add(muzzleFlash);
 
-joystickZone.addEventListener('touchstart', (e) => {
-    joyActive = true;
-    updateJoystick(e.touches[0]);
-});
-joystickZone.addEventListener('touchmove', (e) => {
-    if (joyActive) updateJoystick(e.touches[0]);
-});
-joystickZone.addEventListener('touchend', () => {
-    joyActive = false;
-    joyVector = { x: 0, y: 0 };
-    joystickKnob.style.transform = `translate(0px, 0px)`;
-});
+// ==========================================
+// 5. دشمن‌ها (بات‌ها)
+// ==========================================
+const bots = [];
+const botGeo = new THREE.CapsuleGeometry(0.4, 1, 4, 8);
+const botMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x440000 });
 
-function updateJoystick(touch) {
-    const rect = joystickZone.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    let deltaX = touch.clientX - centerX;
-    let deltaY = touch.clientY - centerY;
-    
-    // محدود کردن حرکت دسته
-    const maxDist = 40;
-    const dist = Math.hypot(deltaX, deltaY);
-    if (dist > maxDist) {
-        deltaX = (deltaX / dist) * maxDist;
-        deltaY = (deltaY / dist) * maxDist;
-    }
-    joystickKnob.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-    joyVector.x = deltaX / maxDist; 
-    joyVector.y = deltaY / maxDist;
+for (let i = 0; i < 5; i++) {
+    const botMesh = new THREE.Mesh(botGeo, botMat);
+    botMesh.castShadow = true;
+    botMesh.position.set((Math.random() - 0.5) * 40, 1, -20 - Math.random() * 20);
+    scene.add(botMesh);
+    bots.push({ mesh: botMesh, health: 100, speed: 0.05 });
 }
 
-// چرخش دوربین (کشیدن روی صفحه غیر از دکمه‌ها)
-let lookActive = false;
-let prevLook = { x: 0, y: 0 };
+// ==========================================
+// 6. کنترل‌ها (جوی‌استیک، چرخش، پرش، شلیک)
+// ==========================================
+let joyVector = { x: 0, y: 0 };
+const joyZone = document.getElementById('joystick-zone');
+const joyKnob = document.getElementById('joystick-knob');
+
+const handleJoy = (e) => {
+    const rect = joyZone.getBoundingClientRect();
+    let dx = (e.touches ? e.touches[0].clientX : e.clientX) - (rect.left + rect.width / 2);
+    let dy = (e.touches ? e.touches[0].clientY : e.clientY) - (rect.top + rect.height / 2);
+    const dist = Math.hypot(dx, dy);
+    const max = 40;
+    if (dist > max) { dx = (dx / dist) * max; dy = (dy / dist) * max; }
+    joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    joyVector.x = dx / max; joyVector.y = dy / max;
+};
+
+joyZone.addEventListener('touchstart', (e) => { e.preventDefault(); handleJoy(e); }, {passive: false});
+joyZone.addEventListener('touchmove', (e) => { e.preventDefault(); handleJoy(e); }, {passive: false});
+joyZone.addEventListener('touchend', () => { joyVector = { x: 0, y: 0 }; joyKnob.style.transform = 'translate(0px, 0px)'; });
+
+// چرخش دوربین
+let lookActive = false, prevLook = { x: 0, y: 0 };
 let rot = { x: 0, y: 0 };
 
 renderer.domElement.addEventListener('touchstart', (e) => {
-    lookActive = true;
-    prevLook = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.target === renderer.domElement) { lookActive = true; prevLook = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
 });
 renderer.domElement.addEventListener('touchmove', (e) => {
-    if(!lookActive) return;
-    let dX = e.touches[0].clientX - prevLook.x;
-    let dY = e.touches[0].clientY - prevLook.y;
-    rot.y -= dX * 0.005;
-    rot.x -= dY * 0.005;
+    if (!lookActive) return;
+    rot.y -= (e.touches[0].clientX - prevLook.x) * 0.005;
+    rot.x -= (e.touches[0].clientY - prevLook.y) * 0.005;
     rot.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, rot.x));
     prevLook = { x: e.touches[0].clientX, y: e.touches[0].clientY };
 });
 renderer.domElement.addEventListener('touchend', () => { lookActive = false; });
 
-// شلیک
-const shootBtn = document.getElementById('shoot-btn');
-let recoil = 0;
-shootBtn.addEventListener('touchstart', (e) => {
+// پرش
+document.getElementById('jump-btn').addEventListener('touchstart', (e) => {
     e.preventDefault();
-    recoil = 0.1;
-    if(navigator.vibrate) navigator.vibrate(40);
+    if (playerBody.position.y <= 0.55) {
+        playerBody.velocity.y = 10;
+    }
 });
-shootBtn.addEventListener('click', () => { recoil = 0.1; if(navigator.vibrate) navigator.vibrate(40); });
 
-// --- حلقه بازی ---
+// شلیک
+let isShooting = false;
+document.getElementById('shoot-btn').addEventListener('touchstart', (e) => { e.preventDefault(); isShooting = true; });
+document.getElementById('shoot-btn').addEventListener('touchend', (e) => { e.preventDefault(); isShooting = false; });
+
+let health = 100, kills = 0;
+
+function shoot() {
+    if (!isShooting) return;
+    muzzleFlash.intensity = 3;
+    gunGroup.position.z = -0.4; // عقب‌نشینی
+    setTimeout(() => { muzzleFlash.intensity = 0; }, 50);
+    
+    if(navigator.vibrate) navigator.vibrate(30);
+
+    // بررسی برخورد تیر با بات‌ها (Raycast)
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
+    for (let i = bots.length - 1; i >= 0; i--) {
+        const bot = bots[i];
+        const intersects = raycaster.intersectObject(bot.mesh);
+        if (intersects.length > 0) {
+            bot.health -= 25;
+            bot.mesh.material.color.setHex(0xffffff); // فلش سفید
+            setTimeout(() => bot.mesh.material.color.setHex(0xff0000), 100);
+
+            if (bot.health <= 0) {
+                scene.remove(bot.mesh);
+                bots.splice(i, 1);
+                kills++;
+                document.getElementById('kill-text').innerText = `Kills: ${kills}`;
+            }
+            break;
+        }
+    }
+}
+
+// ==========================================
+// 7. حلقه اصلی بازی (Game Loop)
+// ==========================================
 const clock = new THREE.Clock();
-const moveSpeed = 8;
 
 function animate() {
     requestAnimationFrame(animate);
-    const dt = clock.getDelta();
+    let dt = clock.getDelta();
+    if (dt > 0.1) dt = 0.1;
 
-    // چرخش دوربین
+    // اعمال چرخش
     camera.rotation.order = 'YXZ';
     camera.rotation.y = rot.y;
     camera.rotation.x = rot.x;
 
-    // حرکت با Joystick
+    // حرکت بازیکن با فیزیک
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    
-    // فقط حرکت افقی
     forward.y = 0; forward.normalize();
     right.y = 0; right.normalize();
 
     let moveX = (joyVector.x * right.x) - (joyVector.y * forward.x);
     let moveZ = (joyVector.x * right.z) - (joyVector.y * forward.z);
+    
+    const speed = 15;
+    playerBody.velocity.x = moveX * speed;
+    playerBody.velocity.z = moveZ * speed;
 
-    camera.position.x += moveX * moveSpeed * dt;
-    camera.position.z += moveZ * moveSpeed * dt;
+    world.step(1/60, dt, 3);
 
-    // انیمیشن اسلحه (Recoil)
-    if (recoil > 0) {
-        gunGroup.position.z = -0.5 + recoil;
-        recoil -= dt * 2;
-        if (recoil < 0) recoil = 0;
-    } else {
-        // نفس کشیدن آرام اسلحه
-        gunGroup.position.z = -0.5 + Math.sin(clock.elapsedTime * 2) * 0.01;
-        gunGroup.position.y = -0.2 + Math.cos(clock.elapsedTime * 2) * 0.01;
+    // آپدیت دوربین از فیزیک
+    camera.position.copy(playerBody.position);
+    camera.position.y += 1.5; // قد چشم
+
+    // حرکت بات‌ها به سمت بازیکن
+    for (let bot of bots) {
+        const dir = new THREE.Vector3().subVectors(camera.position, bot.mesh.position);
+        dir.y = 0; dir.normalize();
+        bot.mesh.position.x += dir.x * bot.speed;
+        bot.mesh.position.z += dir.z * bot.speed;
+        bot.mesh.lookAt(camera.position.x, bot.mesh.position.y, camera.position.z);
+
+        // اگر بات به بازیکن رسید، بهش دمیج بزنه
+        if (bot.mesh.position.distanceTo(camera.position) < 2.5) {
+            health -= 1;
+            document.getElementById('hp-text').innerText = `HP: ${Math.max(0, health)}`;
+        }
     }
 
-    // رندر با افکت Bloom
-    composer.render();
+    // انیمیشن برگشت اسلحه
+    if (gunGroup.position.z < -0.5) gunGroup.position.z += 0.05;
+    else gunGroup.position.z = -0.5 + Math.sin(clock.elapsedTime * 5) * 0.005;
+
+    // شلیک اتوماتیک
+    if (isShooting && Math.random() < 0.2) shoot(); 
+
+    renderer.render(scene, camera);
 }
 
 window.addEventListener('resize', () => {
